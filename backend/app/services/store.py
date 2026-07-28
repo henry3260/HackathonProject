@@ -235,10 +235,14 @@ class ResilientStore(BaseStore):
             return []
 
 
+LOCAL_STORE_PATH = Path(__file__).resolve().parents[2] / ".local-store.json"
+
+
 def build_store() -> BaseStore:
     settings = get_settings()
     if settings.use_mock:
-        return MemoryStore()
+        # 落地到本機檔案，`uvicorn --reload` 或重開後端後案件與 session 不會消失。
+        return MemoryStore(LOCAL_STORE_PATH)
     return DynamoDBStore(settings.dynamodb_table_name)
 
 

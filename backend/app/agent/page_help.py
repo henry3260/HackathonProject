@@ -72,7 +72,12 @@ PAGE_TERMS = (
 )
 
 
-def looks_like_page_question(message: str, current_page_id: str | None = None) -> bool:
+def has_explicit_page_intent(message: str, current_page_id: str | None = None) -> bool:
+    """訊息裡有明確的「問頁面／問怎麼去」訊號，而不只是命中頁面關鍵字。
+
+    只命中關鍵字是很弱的訊號：「滾筒式」「浴室漏水」都會命中，
+    但它們是預約需求或欄位答案，不是導覽問題。
+    """
     text = (message or "").strip()
     if not text:
         return False
@@ -80,7 +85,14 @@ def looks_like_page_question(message: str, current_page_id: str | None = None) -
         return True
     if any(term in text for term in PAGE_TERMS):
         return True
-    if current_page_id and current_page_id in text:
+    return bool(current_page_id and current_page_id in text)
+
+
+def looks_like_page_question(message: str, current_page_id: str | None = None) -> bool:
+    text = (message or "").strip()
+    if not text:
+        return False
+    if has_explicit_page_intent(text, current_page_id):
         return True
     return any(keyword in text for keyword in page_keywords())
 

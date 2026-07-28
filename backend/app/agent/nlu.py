@@ -126,7 +126,9 @@ def parse_address(text: str) -> str | None:
         idx = norm.find(county)
         if idx >= 0:
             tail = norm[idx:]
-            m = re.match(r"^[\u4e00-\u9fffA-Za-z0-9０-９\-之號樓巷弄路街段區鄉鎮市村里鄰]+", tail)
+            # 允許空白：實際輸入常寫「台北市大安區忠孝東路四段 100 號 5 樓」，
+            # 不允許空白會在第一個空格處截斷，門牌整段被丟掉。
+            m = re.match(r"^[\u4e00-\u9fffA-Za-z0-9０-９\-之號樓巷弄路街段區鄉鎮市村里鄰 ]+", tail)
             addr = m.group(0) if m else county
             # 去掉結尾標點與贅字；若含「號/樓」則截到最後一個門牌單位
             addr = re.sub(r"[，。,\.、\s]+$", "", addr)

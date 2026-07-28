@@ -11,6 +11,7 @@ from . import llm, nlu, tools
 from .page_help import (
     answer_page_question,
     build_page_tool_request,
+    has_explicit_page_intent,
     looks_like_page_question,
 )
 
@@ -419,9 +420,29 @@ def _detect_service(text: str, services: list[dict], short_term_context: str, lo
     if llm_choice in valid_ids and _message_matches_service(text, llm_choice, services):
         return llm_choice
 
-    for service_id, keywords in RULE_SERVICE_KEYWORDS:
-        if service_id in valid_ids and any(keyword in text for keyword in keywords):
-            return service_id
+    return _rule_detect_service(text, services)
+
+
+def _rule_detect_service(text: str, services: list[dict]) -> str | None:
+    """不呼叫 LLM 的服務判斷（Bedrock 不可用時的主要路徑）。"""
+    valid_ids = {service["id"] for service in services}
+
+    # 依關鍵字命中權重挑最像的服務，不能用清單順序決定：
+    # 「冷氣清洗」同時命中 washing_machine_cleaning 的「清洗」，
+    # 若照順序取第一個命中就會被判成洗衣機清洗。
+    scored = [
+        (
+            service_id,
+            sum(len(keyword) for keyword in keywords if keyword in text),
+        )
+        for service_id, keywords in RULE_SERVICE_KEYWORDS
+        if service_id in valid_ids
+    ]
+    if scored:
+        # 分數相同時 max 會保留清單中較前面的項目。
+        best_service_id, best_score = max(scored, key=lambda item: item[1])
+        if best_score > 0:
+            return best_service_id
 
     rule_choice, _ = nlu.detect_service(text)
     return rule_choice if rule_choice in valid_ids else None
@@ -446,15 +467,41 @@ def _extract_fields(actor_id: str, state: dict, text: str, events: list[dict] | 
         long_term_memory=long_term_context,
     )
 
+    # Bedrock 不可用（或這一輪沒抓到欄位）時退回規則式 NLU，
+    # 否則整段對話會永遠問同一個欄位。LLM 的判斷優先，規則只補沒抓到的欄位。
+    rule_fields = nlu.extract_fields(
+        state["service_id"] or "",
+        fields,
+        text,
+        state["collected_fields"],
+    )
+
+    active_field_id = current_active_field(state)
     for field in fields:
         field_id = field["id"]
-        if field_id in state["collected_fields"] or field_id not in llm_fields:
+        if field_id in state["collected_fields"]:
             continue
-        normalized = _normalize_field_value(field, llm_fields[field_id], text)
+        raw_value = llm_fields.get(field_id)
+        if raw_value is None:
+            raw_value = rule_fields.get(field_id)
+        if raw_value is None and field_id == active_field_id and _takes_whole_message(field, text):
+            # 自由填寫欄位（問題描述、地址…）被問到時，整句就是答案（nlu.extract_fields 的預留行為）。
+            raw_value = text
+        if raw_value is None:
+            continue
+        normalized = _normalize_field_value(field, raw_value, text)
         if normalized is not None:
             found[field_id] = normalized
 
     return found
+
+
+def _takes_whole_message(field: dict, text: str) -> bool:
+    """被問到的自由填寫欄位可以直接把整句話當答案。"""
+    if field.get("type") != "text" or field["id"] == "phone":
+        return False
+    stripped = text.strip()
+    return bool(stripped) and not _is_yes(stripped) and not _is_no(stripped)
 
 
 def _fallback_reply(state: dict, phase: str, **kwargs) -> str:
@@ -611,6 +658,30 @@ def _invalid_number_field_message(state: dict, latest_user_message: str) -> str 
     return None
 
 
+def _should_answer_page_question(
+    state: dict,
+    text: str,
+    current_page_id: str | None,
+    services: list[dict] | None,
+) -> bool:
+    """只有真的在問頁面／導覽時才切去頁面說明。
+
+    頁面關鍵字很容易誤命中：「滾筒式」是欄位答案、「浴室漏水想找人修」是預約需求，
+    兩者都會命中頁面關鍵字。以前只要命中就回導覽說明，
+    使用者因此既開不了單、也填不完表單。
+    """
+    if not looks_like_page_question(text, current_page_id=current_page_id):
+        return False
+    if has_explicit_page_intent(text, current_page_id=current_page_id):
+        return True
+
+    # 只命中關鍵字：填表中一律當成欄位答案。
+    if state.get("service_id") and not state.get("request_id"):
+        return False
+    # 還沒選服務：這句話本身就能判斷出服務時，當成預約需求處理。
+    return not _rule_detect_service(text, services or [])
+
+
 def handle_message(
     actor_id: str,
     session_id: str,
@@ -622,12 +693,13 @@ def handle_message(
 ) -> dict:
     text = message.strip()
 
-    page_reply = _page_help_reply(text, current_page_id=current_page_id, auth_token=auth_token) if looks_like_page_question(
-        text,
-        current_page_id=current_page_id,
-    ) else None
-    if page_reply:
-        return _reply(state, page_reply)
+    if looks_like_page_question(text, current_page_id=current_page_id):
+        # 只有還沒選服務時才需要服務清單來判斷這句是預約需求還是導覽問題。
+        services = None if state.get("service_id") else _available_services(auth_token)
+        if _should_answer_page_question(state, text, current_page_id, services):
+            page_reply = _page_help_reply(text, current_page_id=current_page_id, auth_token=auth_token)
+            if page_reply:
+                return _reply(state, page_reply)
 
     if state.get("request_id"):
         services = _available_services(auth_token)

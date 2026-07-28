@@ -25,8 +25,23 @@ npm install
 npm run dev                          # http://localhost:5173
 ```
 
-登入頁提供兩個示範帳號（Vincent／美惠），用於展示多使用者資料隔離。
+登入頁可以用 Email 註冊自己的帳號，也提供示範帳號一鍵登入（用於展示多使用者資料隔離）。
+註冊帳號與案件會落地在 `backend/.local-users.json`／`backend/.local-store.json`，
+所以 `--reload` 或重開後端都不會把帳號與案件清掉（這兩個檔案不進版控）。
 語音輸入使用 Web Speech API（Chrome/Edge 支援最佳），不支援時自動退回文字輸入。
+
+### 測試
+```bash
+# 後端：含「註冊帳號把功能全跑一遍」的端到端測試，不需要 AWS
+python -m pytest backend/tests
+
+# 前端單元測試
+cd frontend && npm test
+
+# 前端瀏覽器端到端測試（需要後端與 npm run dev 都在跑）
+cd frontend && npm run test:e2e
+```
+Bedrock 不可用時 agent 會退回規則式 NLU，上面的測試在沒有任何 AWS 資源的情況下都必須全綠。
 
 ## 目前完成（Milestone 1）
 - 規則式中文 NLU：服務判斷、數量（含中文數字）、相對日期（明天／下週三／8月1日）、

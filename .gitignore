@@ -12,3 +12,5 @@ dist/
 # 本機執行產物（各自機器不同，不進版控）
 *.log
 backend/.local-store.json
+backend/.local-users.json
+backend/.local-users.tmp
