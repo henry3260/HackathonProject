@@ -31,17 +31,39 @@ npm run dev                          # http://localhost:5173
 語音輸入使用 Web Speech API（Chrome/Edge 支援最佳），不支援時自動退回文字輸入。
 
 ### 測試
+
 ```bash
-# 後端：含「註冊帳號把功能全跑一遍」的端到端測試，不需要 AWS
-python -m pytest backend/tests
+# 後端（在 repo 根目錄執行，含「註冊帳號把功能全跑一遍」的端到端測試）
+pytest
 
 # 前端單元測試
 cd frontend && npm test
-
-# 前端瀏覽器端到端測試（需要後端與 npm run dev 都在跑）
-cd frontend && npm run test:e2e
 ```
-Bedrock 不可用時 agent 會退回規則式 NLU，上面的測試在沒有任何 AWS 資源的情況下都必須全綠。
+
+瀏覽器端到端測試會真的開一個 Chromium 註冊帳號、填單、跟 AI 管家對話。
+第一次要先裝瀏覽器（`npm install` 只裝 Playwright 套件，不含瀏覽器本體）：
+
+```bash
+cd frontend && npx playwright install chromium
+```
+
+然後開三個終端機：
+
+```bash
+# 終端機 1
+cd backend && source .venv/bin/activate && uvicorn app.main:app --reload
+
+# 終端機 2
+cd frontend && npm run dev
+
+# 終端機 3
+cd frontend && npm run test:e2e          # 想看畫面就加 E2E_HEADED=1
+```
+
+全部通過會印出「全部通過。」，有失敗會列出項目並以非 0 結束。
+
+上面的測試都不需要任何 AWS 資源：Bedrock 不可用時 agent 會退回規則式 NLU，
+所以在沒有憑證的機器上也必須全綠。
 
 ## 目前完成（Milestone 1）
 - 規則式中文 NLU：服務判斷、數量（含中文數字）、相對日期（明天／下週三／8月1日）、

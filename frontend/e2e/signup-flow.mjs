@@ -5,6 +5,9 @@
  * 服務卡片填單 → 案件明細狀態流轉 → 我的服務 → AI 管家對話建案 →
  * 登出後用同一組帳密登入，案件仍在。
  *
+ * 第一次要先裝瀏覽器（npm install 只裝 Playwright 套件，不含瀏覽器本體）：
+ *   cd frontend && npx playwright install chromium
+ *
  * 先啟動後端與前端，再執行：
  *   cd backend && uvicorn app.main:app --reload
  *   cd frontend && npm run dev
