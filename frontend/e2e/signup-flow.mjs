@@ -43,7 +43,36 @@ function check(label, condition, detail = "") {
   return false;
 }
 
+async function statusOf(url) {
+  try {
+    return (await fetch(url, { signal: AbortSignal.timeout(3000) })).status;
+  } catch {
+    return 0; // 連不上
+  }
+}
+
+/** 先確認兩個 server 都在跑，否則測試會爛在 goto 上、看不出原因。 */
+async function preflight() {
+  if ((await statusOf(BASE_URL)) === 0) {
+    log(`前端 dev server 沒有回應：${BASE_URL}`);
+    log("請在另一個終端機保持這個指令執行中：");
+    log("  cd frontend && npm run dev");
+    return false;
+  }
+  // /health 由 vite 代理到後端；後端沒開時 vite 會回 500，所以不能只看「有回應」。
+  const health = await statusOf(`${BASE_URL}/health`);
+  if (health !== 200) {
+    log(`後端 API 沒有回應（前端有在跑，但 /health 回 ${health || "連不上"}）。`);
+    log("請在另一個終端機保持這個指令執行中：");
+    log("  cd backend && source .venv/bin/activate && uvicorn app.main:app --reload");
+    return false;
+  }
+  return true;
+}
+
 async function main() {
+  if (!(await preflight())) process.exit(1);
+
   const browser = await chromium.launch({
     headless: !process.env.E2E_HEADED,
     ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}),
